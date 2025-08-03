@@ -10,7 +10,7 @@ from os import PathLike
 from pathlib import Path
 from platform import machine
 from typing import Final
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from celery.schedules import crontab
 from dateparser.languages.loader import LocaleDataLoader
@@ -115,6 +115,64 @@ def __get_list(
         return []
 
 
+def _normalize_redis_url(url: str) -> str:
+    """
+    Normalize a Redis URL to ensure compatibility across different Redis library versions.
+    
+    Some older versions of the Redis library have issues parsing URLs with empty usernames
+    in the format redis://:password@host:port. This function normalizes such URLs to 
+    ensure they work reliably.
+    
+    Args:
+        url: Redis URL string
+        
+    Returns:
+        Normalized Redis URL string
+    """
+    if not url or not isinstance(url, str):
+        return url
+        
+    # Only process redis:// and rediss:// URLs
+    if not url.lower().startswith(('redis://', 'rediss://')):
+        return url
+    
+    try:
+        parsed = urlparse(url)
+        
+        # Check if we have an empty username with a password or empty auth
+        if parsed.username == '':
+            if parsed.password:
+                # Empty username with password: redis://:password@host:port
+                # Convert to: redis://default:password@host:port
+                netloc = f"default:{parsed.password}@{parsed.hostname}"
+                if parsed.port:
+                    netloc += f":{parsed.port}"
+            else:
+                # Empty username and password: redis://:@host:port  
+                # Convert to: redis://host:port (remove auth entirely)
+                netloc = parsed.hostname
+                if parsed.port:
+                    netloc += f":{parsed.port}"
+            
+            # Reconstruct the URL with the normalized netloc
+            normalized = urlunparse((
+                parsed.scheme,
+                netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+            return normalized
+            
+    except Exception:
+        # If parsing fails for any reason, return the original URL
+        pass
+    
+    # Return unchanged if no normalization needed
+    return url
+
+
 def _parse_redis_url(env_redis: str | None) -> tuple[str, str]:
     """
     Gets the Redis information from the environment or a default and handles
@@ -149,8 +207,9 @@ def _parse_redis_url(env_redis: str | None) -> tuple[str, str]:
         else:
             return (env_redis, f"unix:{path}")
 
-    # Not a socket
-    return (env_redis, env_redis)
+    # Not a socket - normalize the URL for compatibility
+    normalized_url = _normalize_redis_url(env_redis)
+    return (normalized_url, normalized_url)
 
 
 def _parse_beat_schedule() -> dict:

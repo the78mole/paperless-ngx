@@ -149,6 +149,21 @@ class TestRedisSocketConversion(TestCase):
                 "redis://myredishost:6379",
                 ("redis://myredishost:6379", "redis://myredishost:6379"),
             ),
+            # Empty username with password (problematic format that should be normalized)
+            (
+                "redis://:password@myredishost:6379",
+                ("redis://default:password@myredishost:6379", "redis://default:password@myredishost:6379"),
+            ),
+            # Empty username and password (should remove auth entirely)
+            (
+                "redis://:@myredishost:6379",
+                ("redis://myredishost:6379", "redis://myredishost:6379"),
+            ),
+            # Empty username with password and database
+            (
+                "redis://:password@myredishost:6379/5",
+                ("redis://default:password@myredishost:6379/5", "redis://default:password@myredishost:6379/5"),
+            ),
         ]:
             result = _parse_redis_url(input)
             self.assertTupleEqual(expected, result)
