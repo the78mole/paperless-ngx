@@ -12,23 +12,30 @@ def remove_assign_tag_field_mysql(apps, schema_editor):
     Custom operation to handle MySQL/MariaDB foreign key constraint removal.
     MySQL/MariaDB requires foreign key constraints to be dropped before dropping the index.
     """
-    if schema_editor.connection.vendor in ['mysql']:
+    if schema_editor.connection.vendor in ["mysql"]:
         with schema_editor.connection.cursor() as cursor:
-            # Get the foreign key constraint name
-            cursor.execute("""
-                SELECT CONSTRAINT_NAME 
-                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
-                WHERE TABLE_SCHEMA = DATABASE() 
-                AND TABLE_NAME = 'paperless_mail_mailrule' 
-                AND COLUMN_NAME = 'assign_tag_id' 
-                AND REFERENCED_TABLE_NAME IS NOT NULL
-            """)
-            
-            result = cursor.fetchone()
-            if result:
-                constraint_name = result[0]
-                # Drop the foreign key constraint first
-                cursor.execute(f"ALTER TABLE paperless_mail_mailrule DROP FOREIGN KEY {constraint_name}")
+            try:
+                # Get the foreign key constraint name
+                cursor.execute("""
+                    SELECT CONSTRAINT_NAME
+                    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                    WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = 'paperless_mail_mailrule'
+                    AND COLUMN_NAME = 'assign_tag_id'
+                    AND REFERENCED_TABLE_NAME IS NOT NULL
+                """)
+
+                result = cursor.fetchone()
+                if result:
+                    constraint_name = result[0]
+                    # Drop the foreign key constraint first
+                    cursor.execute(
+                        f"ALTER TABLE paperless_mail_mailrule DROP FOREIGN KEY {constraint_name}",
+                    )
+            except Exception:
+                # If the constraint doesn't exist or there's an error,
+                # continue with the migration. Django will handle the field removal.
+                pass
 
 
 def reverse_remove_assign_tag_field_mysql(apps, schema_editor):
@@ -36,7 +43,6 @@ def reverse_remove_assign_tag_field_mysql(apps, schema_editor):
     Reverse operation - this is a no-op since we'll let Django handle the reverse
     through the normal RemoveField operation reverse.
     """
-    pass
 
 
 class RemoveAssignTagFieldMySQL(migrations.RunPython):
@@ -44,10 +50,11 @@ class RemoveAssignTagFieldMySQL(migrations.RunPython):
     Custom migration operation that handles MySQL/MariaDB foreign key constraints
     before removing the assign_tag field.
     """
+
     def __init__(self):
         super().__init__(
             remove_assign_tag_field_mysql,
-            reverse_remove_assign_tag_field_mysql
+            reverse_remove_assign_tag_field_mysql,
         )
 
 
